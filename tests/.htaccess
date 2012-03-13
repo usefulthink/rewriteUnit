@@ -1,0 +1,17 @@
+RewriteEngine On
+
+RewriteBase /
+
+# redirect anything from /common/* to /common/prefix/*, except of course
+# /common/prefix/* itself (and except eventually existing files).
+# ... dont rewrite if a file with that name exists
+RewriteCond %{REQUEST_FILENAME} !-f
+
+# ... dont rewrite URIs starting with /common/prefix/ (/foo/common/prefix 
+#     and /common/prefix2 will be ignored)
+RewriteCond %{REQUEST_URI} !^/common/prefix/
+RewriteRule ^common/(.*)$ common/prefix/$1 [L,R=302,NC]
+
+# forward anything that is not an actual file to index.php for processing
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^(.*)$ index.php/$1 [QSA,L]

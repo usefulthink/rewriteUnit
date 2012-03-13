@@ -1,0 +1,138 @@
+#!/bin/bash
+
+_tests=0
+_passed=0
+_skipped=0
+_failed=0
+
+# _getLocationFromUrl $url $pathOnly
+_getLocationFromUrl() {
+    local location="$(curl -I "$1" 2> /dev/null \
+            | grep Location | sed -e 's,Location:\s*\(\S*\)\s*$,\1,')"
+    local redirPath="${location/$BASE_URL/}"
+
+    [[ $# -eq 1 ]] \
+        && echo $location \
+        || echo $redirPath
+
+    [[ -z "$location" ]] \
+       && return 1 \
+       || return 0
+}
+
+startFile() {
+    printf "\n\033[1;33m-------- file: %s\033[0m\n" "$@"
+}
+section() {
+    printf "\033[1;33m> %s\033[0m\n" "$@"
+}
+
+# skip $numTests $msg
+skip() {
+    printf "\033[33m  [SKIP]\033[0m %s (%d test(s))\n" "$2" "$1"
+    _tests=$(($_tests + $1))
+    _skipped=$(($_skipped + $1))
+}
+
+summary() {
+    summary=$(printf "%d tests - %d passed, %d skipped, %d failed" \
+        $_tests $_passed $_skipped $_failed)
+
+    if [ $_passed -eq $_tests ] ; then
+        printf "\n\033[7;32mResult: All tests passed (%s).\n\033[0m\n" "$summary"
+        return 0
+    elif [ $_failed -eq 0 ] ; then
+        printf "\n\033[7;33mResult: OK, but skipped Tests present (%s).\033[0m\n" "$summary"
+        return 1
+    else
+        printf "\n\033[37;41mResult: Failed (%s).\033[0m\n" "$summary"
+        return 2
+    fi
+}
+
+# assertLocalRedirect $path $expectedLocation
+assertLocalRedirect() {
+    local location="$(curl -I "$BASE_URL/$1" 2> /dev/null \
+            | grep Location | sed -e 's,Location:\s*\(\S*\)\s*$,\1,')"
+    local redirPath="${location/$BASE_URL/}"
+
+    _tests=$(($_tests + 1))
+    if [ "$redirPath" == "$2" ] ; then
+        printf "\033[32m  [PASS]\033[0m"
+        _passed=$(($_passed + 1 ))
+    else
+        printf "\033[31m  [FAIL]\033[0m"
+        _failed=$(($_failed + 1))
+    fi
+
+    printf " redirect: \033[37m%s\033[0m -> \033[37m%s\033[0m\n" "$1" "$2"
+}
+
+# assertLocalRedirect $path
+assertNoRedirect() {
+    local location=$(_getLocationFromUrl "$BASE_URL$1" true)
+    _tests=$(($_tests + 1))
+    if [ -z "$location" ] ; then
+        printf "\033[32m  [PASS]\033[0m not redirected: \033[37m%s\033[0m\n" "$1"
+        _passed=$(($_passed + 1))
+    else
+        printf "\033[31m  [FAIL]\033[0m"
+        printf " not redirected: \033[37m%s\033[0m (was redirected to: \033[37m%s\033[0m)\n" "$1" "$location"
+        _failed=$(($_failed + 1))
+    fi
+
+}
+
+
+# ----
+# ---- MAIN
+# ----
+printHelp() {
+cat <<- __EOT__
+USAGE:
+  $(basename $0) [OPTIONS] <file ...>
+
+OPTIONS:
+  -D KEY=VALUE  export the given value into the environment of the tests
+  --help -h -?  you're looking at it.
+__EOT__
+}
+
+if [ $# -eq 0 ] ; then
+    printHelp && exit 0
+fi
+
+shortopts="h,?,D:"
+longopts="help"
+
+TMP=$(getopt -n "$(basename $0)" -l "$longopts" -o "$shortopts" -- "$@" )
+if [ $? != 0 ] ; then print_help && exit 1 ; fi
+eval set -- "$TMP"
+
+while [ $# -gt 0 ] ; do
+    case $1 in
+    -D)
+        eval export "$2"
+        shift 2
+    ;;
+    -h|-\?|--help)
+        print_help && exit 0
+    ;;
+    --)
+        shift 1
+        while [ $# -gt 0 ] ; do
+            startFile "$1"
+            source $1
+            shift 1
+        done
+    ;;
+    *)
+        echo "unknown parameter: $1"
+        print_help
+        exit 11
+    ;;
+    esac
+done
+
+summary
+exit $?
